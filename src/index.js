@@ -372,6 +372,9 @@ async function mountVidexpulsePrompt(options = {}) {
     if (!cfg.vapidPublicKey || !options.promptConfig) {
       try {
         const remote = await sdk.fetchSdkConfig();
+        if (remote?.webpushEnabled === false) {
+          return null;
+        }
         if (remote?.vapidPublicKey) {
           sdk.initialize({ vapidPublicKey: remote.vapidPublicKey });
         }
