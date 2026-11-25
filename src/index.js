@@ -398,12 +398,6 @@ async function mountVidexpulsePrompt(options = {}) {
     isSubscribed = false;
   }
 
-  if (Notification.permission === 'granted' && !isSubscribed) {
-    readySdk.subscribe({ userId }).then(() => {
-      isSubscribed = true;
-    }).catch(() => {});
-  }
-
   // If already subscribed and behavior is auto-hide, do not show bell
   if (isSubscribed && promptCfg.bellBehavior !== 'always') {
     return;
@@ -493,67 +487,96 @@ async function mountVidexpulsePrompt(options = {}) {
       border: '1px solid #e2e8f0',
       borderRadius: '12px',
       padding: '14px',
-      width: '240px',
+      width: '250px',
       boxShadow: '0 14px 36px rgba(15, 23, 42, 0.18)',
       color: '#0f172a',
       fontSize: '13px'
     });
+
+    const isBlocked = Notification.permission === 'denied';
     const statusLine = document.createElement('div');
     statusLine.style.fontWeight = '600';
     statusLine.style.marginBottom = '4px';
-    statusLine.textContent = isSubscribed ? 'Subscribed to notifications' : 'Get push notifications';
+    statusLine.textContent = isBlocked
+      ? 'Notifications blocked'
+      : isSubscribed
+        ? 'Subscribed to notifications'
+        : 'Get push notifications';
 
     const subText = document.createElement('div');
     subText.style.fontSize = '12px';
-    subText.style.color = '#64748b';
-    subText.style.marginBottom = '10px';
-    subText.textContent = isSubscribed
-      ? 'You are receiving push updates from this site.'
-      : 'Click below to subscribe for updates.';
-
-    const actionBtn = document.createElement('button');
-    actionBtn.type = 'button';
-    actionBtn.textContent = isSubscribed ? 'Unsubscribe' : (promptCfg.allowButtonText || 'Subscribe');
-    Object.assign(actionBtn.style, {
-      width: '100%',
-      padding: '8px 12px',
-      borderRadius: '8px',
-      border: 'none',
-      background: isSubscribed ? '#ef4444' : (promptCfg.allowButtonColor || '#1677ff'),
-      color: '#ffffff',
-      fontWeight: '600',
-      cursor: 'pointer'
-    });
-
-    actionBtn.addEventListener('click', async () => {
-      actionBtn.disabled = true;
-      actionBtn.textContent = isSubscribed ? 'Unsubscribing...' : 'Subscribing...';
-      try {
-        if (isSubscribed) {
-          await readySdk.unsubscribeDevice();
-          isSubscribed = false;
-          bellBtn.title = 'Enable notifications';
-          bellBtn.setAttribute('aria-label', 'Enable notifications');
-        } else {
-          await readySdk.subscribe({ userId });
-          isSubscribed = true;
-          bellBtn.title = 'Manage notifications';
-          bellBtn.setAttribute('aria-label', 'Manage notifications');
-        }
-        popoverEl?.remove();
-        popoverEl = null;
-        if (isSubscribed && promptCfg.bellBehavior !== 'always') {
-          showSubscribedBadgeAndHide();
-        }
-      } catch (e) {
-        actionBtn.disabled = false;
-        actionBtn.textContent = isSubscribed ? 'Unsubscribe' : (promptCfg.allowButtonText || 'Subscribe');
-      }
-    });
+    subText.style.color = isBlocked ? '#dc2626' : '#64748b';
+    subText.style.marginBottom = isBlocked ? '0' : '10px';
+    subText.textContent = isBlocked
+      ? 'Notification is blocked in browser settings. Reset the browser settings for this site and reload.'
+      : isSubscribed
+        ? 'You are receiving push updates from this site.'
+        : 'Click below to subscribe for updates.';
 
     popoverEl.appendChild(statusLine);
     popoverEl.appendChild(subText);
-    popoverEl.appendChild(actionBtn);
+
+    if (!isBlocked) {
+      const errorText = document.createElement('div');
+      errorText.style.fontSize = '11px';
+      errorText.style.color = '#dc2626';
+      errorText.style.marginTop = '6px';
+      errorText.style.display = 'none';
+
+      const actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      actionBtn.textContent = isSubscribed ? 'Unsubscribe' : (promptCfg.allowButtonText || 'Subscribe');
+      Object.assign(actionBtn.style, {
+        width: '100%',
+        padding: '8px 12px',
+        borderRadius: '8px',
+        border: 'none',
+        background: isSubscribed ? '#ef4444' : (promptCfg.allowButtonColor || '#1677ff'),
+        color: '#ffffff',
+        fontWeight: '600',
+        cursor: 'pointer'
+      });
+
+      actionBtn.addEventListener('click', async () => {
+        if (!isSubscribed && promptCfg.customPromptEnabled !== false) {
+          popoverEl?.remove();
+          popoverEl = null;
+          showCustomSlidePrompt(true);
+          return;
+        }
+
+        actionBtn.disabled = true;
+        errorText.style.display = 'none';
+        actionBtn.textContent = isSubscribed ? 'Unsubscribing...' : 'Subscribing...';
+        try {
+          if (isSubscribed) {
+            await readySdk.unsubscribeDevice();
+            isSubscribed = false;
+            bellBtn.title = 'Enable notifications';
+            bellBtn.setAttribute('aria-label', 'Enable notifications');
+          } else {
+            await readySdk.subscribe({ userId });
+            isSubscribed = true;
+            bellBtn.title = 'Manage notifications';
+            bellBtn.setAttribute('aria-label', 'Manage notifications');
+          }
+          popoverEl?.remove();
+          popoverEl = null;
+          if (isSubscribed && promptCfg.bellBehavior !== 'always') {
+            showSubscribedBadgeAndHide();
+          }
+        } catch (e) {
+          actionBtn.disabled = false;
+          actionBtn.textContent = isSubscribed ? 'Unsubscribe' : (promptCfg.allowButtonText || 'Subscribe');
+          errorText.textContent = e?.message || 'Subscription failed.';
+          errorText.style.display = 'block';
+        }
+      });
+
+      popoverEl.appendChild(actionBtn);
+      popoverEl.appendChild(errorText);
+    }
+
     bellRoot.insertBefore(popoverEl, bellBtn);
   }
 
@@ -562,14 +585,18 @@ async function mountVidexpulsePrompt(options = {}) {
     togglePopover();
   });
 
-  // Show PNFPB-style custom slide prompt when permission is default & not recently dismissed
-  const dismissedUntil = Number(localStorage.getItem(DISMISS_STORAGE_KEY) || 0);
-  if (
-    promptCfg.customPromptEnabled !== false &&
-    Notification.permission === 'default' &&
-    !isSubscribed &&
-    Date.now() > dismissedUntil
-  ) {
+  function showCustomSlidePrompt(forceShow = false) {
+    if (document.getElementById('videxpulse-slide-prompt')) {
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      return;
+    }
+    const dismissedUntil = Number(localStorage.getItem(DISMISS_STORAGE_KEY) || 0);
+    if (!forceShow && Date.now() <= dismissedUntil) {
+      return;
+    }
+
     const promptBox = document.createElement('div');
     promptBox.id = 'videxpulse-slide-prompt';
     Object.assign(promptBox.style, {
@@ -616,6 +643,11 @@ async function mountVidexpulsePrompt(options = {}) {
     topRow.appendChild(iconCircle);
     topRow.appendChild(textEl);
 
+    const promptErr = document.createElement('div');
+    promptErr.style.fontSize = '12px';
+    promptErr.style.color = '#dc2626';
+    promptErr.style.display = 'none';
+
     const btnRow = document.createElement('div');
     Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '10px' });
 
@@ -655,20 +687,39 @@ async function mountVidexpulsePrompt(options = {}) {
     allowBtn.addEventListener('click', async () => {
       allowBtn.disabled = true;
       allowBtn.textContent = 'Subscribing...';
+      promptErr.style.display = 'none';
       try {
         await readySdk.subscribe({ userId });
         isSubscribed = true;
+        bellBtn.title = 'Manage notifications';
+        bellBtn.setAttribute('aria-label', 'Manage notifications');
         showSubscribedBadgeAndHide();
       } catch (e) {
-        promptBox.remove();
+        if (Notification.permission === 'denied') {
+          promptErr.textContent = 'Notification is blocked in browser settings. Reset the browser settings for this site.';
+          promptErr.style.display = 'block';
+          allowBtn.disabled = false;
+          allowBtn.textContent = promptCfg.allowButtonText || 'Allow';
+        } else {
+          promptErr.textContent = e?.message || 'Subscription failed.';
+          promptErr.style.display = 'block';
+          allowBtn.disabled = false;
+          allowBtn.textContent = promptCfg.allowButtonText || 'Allow';
+        }
       }
     });
 
     btnRow.appendChild(cancelBtn);
     btnRow.appendChild(allowBtn);
     promptBox.appendChild(topRow);
+    promptBox.appendChild(promptErr);
     promptBox.appendChild(btnRow);
     document.body.appendChild(promptBox);
+  }
+
+  // Show PNFPB-style custom slide prompt when unsubscribed & permission is not blocked
+  if (promptCfg.customPromptEnabled !== false && !isSubscribed) {
+    showCustomSlidePrompt(false);
   }
 }
 
