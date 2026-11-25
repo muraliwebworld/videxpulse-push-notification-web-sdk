@@ -1,0 +1,30 @@
+{
+  "name": "@videxpulse/web-sdk",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Videxpulse browser SDK for web push subscriptions, customizable bell & Safari prompt, and delegated notification publishing.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muraliwebworld/videxpulse-push-notification-web-sdk.git"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "bin": {
+    "videxpulse-sw-init": "./bin/init-sw.js"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "examples/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node ./bin/init-sw.js --if-project"
+  }
+}

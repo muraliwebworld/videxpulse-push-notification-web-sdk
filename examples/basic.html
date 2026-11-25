@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Videxpulse Web SDK Example</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        padding: 2rem;
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      button {
+        margin-right: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      pre {
+        background: #f5f7fb;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Videxpulse Web SDK</h1>
+    <p>Use this sample to register a browser subscription, publish a notification, and unsubscribe.</p>
+    <div>
+      <button id="register-button" type="button">Register device</button>
+      <button id="send-button" type="button">Send notification</button>
+      <button id="unsubscribe-button" type="button">Unsubscribe</button>
+    </div>
+    <pre id="status">Waiting for action...</pre>
+    <script type="module" src="./basic.js"></script>
+  </body>
+</html>
