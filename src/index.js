@@ -492,16 +492,24 @@ async function mountVidexpulsePrompt(options = {}) {
       background: '#ffffff',
       border: '1px solid #e2e8f0',
       borderRadius: '12px',
-      padding: '12px 14px',
-      width: '230px',
+      padding: '14px',
+      width: '240px',
       boxShadow: '0 14px 36px rgba(15, 23, 42, 0.18)',
       color: '#0f172a',
       fontSize: '13px'
     });
     const statusLine = document.createElement('div');
     statusLine.style.fontWeight = '600';
-    statusLine.style.marginBottom = '8px';
-    statusLine.textContent = isSubscribed ? 'Push notifications enabled' : 'Get push notifications';
+    statusLine.style.marginBottom = '4px';
+    statusLine.textContent = isSubscribed ? 'Subscribed to notifications' : 'Get push notifications';
+
+    const subText = document.createElement('div');
+    subText.style.fontSize = '12px';
+    subText.style.color = '#64748b';
+    subText.style.marginBottom = '10px';
+    subText.textContent = isSubscribed
+      ? 'You are receiving push updates from this site.'
+      : 'Click below to subscribe for updates.';
 
     const actionBtn = document.createElement('button');
     actionBtn.type = 'button';
@@ -519,13 +527,18 @@ async function mountVidexpulsePrompt(options = {}) {
 
     actionBtn.addEventListener('click', async () => {
       actionBtn.disabled = true;
+      actionBtn.textContent = isSubscribed ? 'Unsubscribing...' : 'Subscribing...';
       try {
         if (isSubscribed) {
           await readySdk.unsubscribeDevice();
           isSubscribed = false;
+          bellBtn.title = 'Enable notifications';
+          bellBtn.setAttribute('aria-label', 'Enable notifications');
         } else {
           await readySdk.subscribe({ userId });
           isSubscribed = true;
+          bellBtn.title = 'Manage notifications';
+          bellBtn.setAttribute('aria-label', 'Manage notifications');
         }
         popoverEl?.remove();
         popoverEl = null;
@@ -534,27 +547,19 @@ async function mountVidexpulsePrompt(options = {}) {
         }
       } catch (e) {
         actionBtn.disabled = false;
+        actionBtn.textContent = isSubscribed ? 'Unsubscribe' : (promptCfg.allowButtonText || 'Subscribe');
       }
     });
 
     popoverEl.appendChild(statusLine);
+    popoverEl.appendChild(subText);
     popoverEl.appendChild(actionBtn);
     bellRoot.insertBefore(popoverEl, bellBtn);
   }
 
-  bellBtn.addEventListener('click', async () => {
-    if (promptCfg.bellBehavior === 'always' || isSubscribed) {
-      togglePopover();
-      return;
-    }
-    bellBtn.disabled = true;
-    try {
-      await readySdk.subscribe({ userId });
-      isSubscribed = true;
-      showSubscribedBadgeAndHide();
-    } catch (e) {
-      bellBtn.disabled = false;
-    }
+  bellBtn.addEventListener('click', () => {
+    removePromptModal();
+    togglePopover();
   });
 
   // Show PNFPB-style custom slide prompt when permission is default & not recently dismissed
