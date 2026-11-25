@@ -53,7 +53,7 @@ export async function GET() {
         'x-videxpulse-api-key': apiKey,
         'x-videxpulse-secret-key': secretKey
       },
-      body: JSON.stringify({ platform: 'web', capabilities: ['register'] }),
+      body: JSON.stringify({ platform: 'web', capabilities: ['register', 'unregister'] }),
       cache: 'no-store'
     });
 
