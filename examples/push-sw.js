@@ -1,11 +1,16 @@
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  const payload = event.data ? event.data.json() : {};
+  const notif = payload.notification || payload;
+  const title = notif.title || payload.title || 'Videxpulse';
+  const body = notif.body || payload.body || 'You have a new notification.';
+  const icon = notif.icon || notif.image || payload.imageUrl || '/assets/brand-logo.png';
+  const clickUrl = payload.fcmOptions?.link || notif.click_action || payload.data?.clickUrl || payload.clickUrl || '/';
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Videxpulse', {
-      body: data.body || 'You have a new notification.',
-      icon: '/assets/brand-logo.png',
-      data
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      data: { ...payload, clickUrl }
     })
   );
 });
