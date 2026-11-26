@@ -43,18 +43,48 @@ function createJsonHeaders(extraHeaders = {}) {
   };
 }
 
+function arrayBufferToBase64Url(buffer) {
+  if (!buffer) {
+    return '';
+  }
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return globalThis.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function getSubscriptionPayload(subscription) {
   if (!subscription) {
     return null;
   }
 
+  const encoding =
+    typeof PushManager !== 'undefined' && Array.isArray(PushManager.supportedContentEncodings)
+      ? PushManager.supportedContentEncodings
+      : [];
+
   if (typeof subscription.toJSON === 'function') {
-    return subscription.toJSON();
+    const json = subscription.toJSON() || {};
+    return {
+      endpoint: json.endpoint || subscription.endpoint || '',
+      keys: {
+        p256dh: json.keys?.p256dh || '',
+        auth: json.keys?.auth || ''
+      },
+      encoding,
+      expirationTime: json.expirationTime ?? subscription.expirationTime ?? null
+    };
   }
+
+  const p256dh = typeof subscription.getKey === 'function' ? arrayBufferToBase64Url(subscription.getKey('p256dh')) : (subscription.keys?.p256dh || '');
+  const auth = typeof subscription.getKey === 'function' ? arrayBufferToBase64Url(subscription.getKey('auth')) : (subscription.keys?.auth || '');
 
   return {
     endpoint: subscription.endpoint || '',
-    keys: subscription.keys || {},
+    keys: { p256dh, auth },
+    encoding,
     expirationTime: subscription.expirationTime || null
   };
 }
@@ -223,6 +253,8 @@ function createVidexpulseWebSdk(initialConfig = {}) {
   }
 
   async function registerDevice(options = {}) {
+    const resolvedUserId = normalizeText(options.deviceUserId || options.userId || '');
+
     if (config.preferredWebProvider === 'fcm' && !options.subscription) {
       const permission = await ensureNotificationPermission();
       if (permission !== 'granted') {
@@ -233,6 +265,13 @@ function createVidexpulseWebSdk(initialConfig = {}) {
       }
       const registration = await ensureServiceWorkerRegistration();
       const fcmToken = options.endpointOrToken || await obtainFcmToken(registration);
+      let webPushSubscription = null;
+      try {
+        const pushSub = await registration.pushManager.getSubscription();
+        webPushSubscription = getSubscriptionPayload(pushSub);
+      } catch (e) {
+        webPushSubscription = null;
+      }
 
       return authorizedFetch('/api/devices/register', {
         method: 'POST',
@@ -241,9 +280,12 @@ function createVidexpulseWebSdk(initialConfig = {}) {
           platform: 'web',
           provider: 'fcm',
           deviceId: options.deviceId || '',
-          userId: options.userId || '',
+          userId: resolvedUserId,
+          deviceUserId: resolvedUserId,
           endpointOrToken: fcmToken,
-          authMetadata: options.authMetadata || { fcmWeb: true }
+          authMetadata: options.authMetadata || { fcmWeb: true },
+          subscription: webPushSubscription,
+          webPushSubscription
         })
       });
     }
@@ -258,10 +300,12 @@ function createVidexpulseWebSdk(initialConfig = {}) {
         platform: 'web',
         provider: 'webpush',
         deviceId: options.deviceId || '',
-        userId: options.userId || '',
+        userId: resolvedUserId,
+        deviceUserId: resolvedUserId,
         endpointOrToken: options.endpointOrToken || subscriptionPayload?.endpoint || subscription.endpoint || '',
         authMetadata: options.authMetadata || subscriptionPayload?.keys || {},
-        subscription: subscriptionPayload
+        subscription: subscriptionPayload,
+        webPushSubscription: subscriptionPayload
       })
     });
   }
