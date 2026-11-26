@@ -196,7 +196,58 @@ function createVidexpulseWebSdk(initialConfig = {}) {
     });
   }
 
+  async function obtainFcmToken(registration) {
+    const fb = config.firebaseWebConfig || {};
+    if (!fb.apiKey || !fb.appId || !fb.messagingSenderId || !fb.projectId) {
+      throw new Error('Firebase Web Config (FIREBASE_API_KEY, FIREBASE_APP_ID, FIREBASE_MESSAGING_SENDER_ID, FIREBASE_PROJECT_ID) is required for Firebase web push.');
+    }
+    const [{ initializeApp, getApps, getApp }, { getMessaging, getToken }] = await Promise.all([
+      import(/* webpackIgnore: true */ 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js'),
+      import(/* webpackIgnore: true */ 'https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js')
+    ]);
+    const appName = `videxpulse_${config.appId || 'default'}`;
+    const existing = getApps().find((a) => a.name === appName);
+    const fbApp = existing || initializeApp(fb, appName);
+    const messaging = getMessaging(fbApp);
+    const token = await getToken(messaging, {
+      vapidKey: config.vapidPublicKey,
+      serviceWorkerRegistration: registration
+    });
+    if (!token) {
+      throw new Error('Failed to retrieve FCM registration token.');
+    }
+    try {
+      localStorage.setItem(`videxpulse_fcm_token_${config.appId}`, token);
+    } catch (e) {}
+    return token;
+  }
+
   async function registerDevice(options = {}) {
+    if (config.preferredWebProvider === 'fcm' && !options.subscription) {
+      const permission = await ensureNotificationPermission();
+      if (permission !== 'granted') {
+        throw new Error('Notification permission was not granted.');
+      }
+      if (!config.vapidPublicKey) {
+        throw new Error('Firebase Web Push Certificate Public Key is required.');
+      }
+      const registration = await ensureServiceWorkerRegistration();
+      const fcmToken = options.endpointOrToken || await obtainFcmToken(registration);
+
+      return authorizedFetch('/api/devices/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          appId: config.appId,
+          platform: 'web',
+          provider: 'fcm',
+          deviceId: options.deviceId || '',
+          userId: options.userId || '',
+          endpointOrToken: fcmToken,
+          authMetadata: options.authMetadata || { fcmWeb: true }
+        })
+      });
+    }
+
     const subscription = options.subscription || await ensurePushSubscription();
     const subscriptionPayload = getSubscriptionPayload(subscription);
 
@@ -216,6 +267,10 @@ function createVidexpulseWebSdk(initialConfig = {}) {
   }
 
   async function refreshDevice(options = {}) {
+    if (config.preferredWebProvider === 'fcm') {
+      return registerDevice(options);
+    }
+
     const subscription = options.subscription || await getPushSubscription();
 
     if (!subscription) {
@@ -229,6 +284,25 @@ function createVidexpulseWebSdk(initialConfig = {}) {
   }
 
   async function unsubscribeDevice(options = {}) {
+    if (config.preferredWebProvider === 'fcm') {
+      const storageKey = `videxpulse_fcm_token_${config.appId}`;
+      let savedToken = '';
+      try {
+        savedToken = localStorage.getItem(storageKey) || '';
+        localStorage.removeItem(storageKey);
+      } catch (e) {}
+
+      return authorizedFetch('/api/devices/unregister', {
+        method: 'POST',
+        body: JSON.stringify({
+          appId: config.appId,
+          deviceId: options.deviceId || '',
+          endpointOrToken: options.endpointOrToken || savedToken,
+          status: 'unsubscribed'
+        })
+      });
+    }
+
     let subscription = options.subscription || await getPushSubscription();
 
     if (subscription && typeof subscription.unsubscribe === 'function') {
@@ -378,6 +452,12 @@ async function mountVidexpulsePrompt(options = {}) {
         if (remote?.vapidPublicKey) {
           sdk.initialize({ vapidPublicKey: remote.vapidPublicKey });
         }
+        if (remote?.preferredWebProvider) {
+          sdk.initialize({
+            preferredWebProvider: remote.preferredWebProvider,
+            firebaseWebConfig: remote.firebaseWebConfig || {}
+          });
+        }
         if (remote?.promptConfig && !options.promptConfig) {
           promptCfg = { ...promptCfg, ...remote.promptConfig };
         }
@@ -395,8 +475,13 @@ async function mountVidexpulsePrompt(options = {}) {
 
   let isSubscribed = false;
   try {
-    const existingSub = Notification.permission === 'granted' ? await readySdk.getPushSubscription() : null;
-    isSubscribed = Boolean(existingSub);
+    if (readySdk.getConfig().preferredWebProvider === 'fcm') {
+      const savedToken = localStorage.getItem(`videxpulse_fcm_token_${readySdk.getConfig().appId}`);
+      isSubscribed = Notification.permission === 'granted' && Boolean(savedToken);
+    } else {
+      const existingSub = Notification.permission === 'granted' ? await readySdk.getPushSubscription() : null;
+      isSubscribed = Boolean(existingSub);
+    }
   } catch (e) {
     isSubscribed = false;
   }
