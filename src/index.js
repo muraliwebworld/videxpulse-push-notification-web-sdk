@@ -372,7 +372,7 @@ async function mountVidexpulsePrompt(options = {}) {
     if (!cfg.vapidPublicKey || !options.promptConfig) {
       try {
         const remote = await sdk.fetchSdkConfig();
-        if (remote?.webpushEnabled === false) {
+        if (remote?.pushEnabled === false || (remote?.webpushEnabled === false && !remote?.firebaseEnabled)) {
           return null;
         }
         if (remote?.vapidPublicKey) {
